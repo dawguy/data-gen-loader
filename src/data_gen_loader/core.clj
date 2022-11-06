@@ -1,51 +1,52 @@
 (ns data-gen-loader.core
-  (:require [clojure.java.jdbc :refer :all])
-  (:gen-class))
+  (:require [next.jdbc :refer :all]
+            [com.stuartsierra.component :as component]
+            [data-gen-loader.model :as model])
+)
 
-(def testdata
-  { :url "http://example.com",
-   :title "SQLite Example",
-   :body "Example using SQLite with Clojure"
-   })
+;; Implement your application's lifecycle here:
+;; Although the application config is not used in this simple
+;; case, it probably would be in the general case -- and the
+;; application state here is trivial but could be more complex.
+(defrecord Application [config   ; configuration (unused)
+                        database ; dependency
+                        state]   ; behavior
+  component/Lifecycle
+  (start [this]
+    ;; Component ensures that dependencies are fully initialized and
+    ;; started before invoking this component.
+    (assoc this :state "Running"))
+  (stop  [this]
+    (assoc this :state "Stopped")))
 
-(def db
-  {:classname   "org.sqlite.JDBC"
-   :subprotocol "sqlite"
-   :subname     "db/database.db"
-   })
+(defn my-application [options]
+  (component/using (map->Application options)
+                   [:database]))
 
-(defn create-db
-  "create db and table"
-  []
-  (try (db-do-commands db
-                       (create-table-ddl :news
-                                         [[:timestamp :datetime :default :current_timestamp ]
-                                          [:url :text]
-                                          [:title :text]
-                                          [:body :text]]))
-       (catch Exception e
-         (println (.getMessage e)))))
+(defn new-system
+  "Build a default system to run. In the REPL:
 
+  (def system (new-system 8888))
 
-(defn print-result-set
-  "prints the result set in tabular form"
-  [result-set]
-  (doseq [row result-set]
-    (println row)))
+  (alter-var-root #'system component/start)
 
+  (alter-var-root #'system component/stop)
 
-(defn output
-  "execute query and return lazy sequence"
-  []
-  (query db ["select * from news"]))
+  See the Rich Comment Form below."
+  ([port] (new-system port true))
+  ([port repl]
+   (component/system-map :application (my-application {:repl repl})
+                         :database    (model/setup-database)
+                         )))
 
-(defn -main
-  "launch!"
-  []
-  (create-db)
-  (insert! db :news testdata)
-  (print-result-set (output)))
-
-;(comment keys (first output))
-;(comment :body (first output))))
+(comment
+  (def system (new-system 8888))
+  (alter-var-root #'system component/start)
+  (alter-var-root #'system component/stop)
+  ;; the comma here just "anchors" the closing paren on this line,
+  ;; which makes it easier to put you cursor at the end of the lines
+  ;; above when you want to evaluate them into the REPL:
+  (model/get-inserted-data (:database system))
+  (model/populate (:database system) (:dbtype "sqlite"))
+  ,)
 
