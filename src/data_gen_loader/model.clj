@@ -77,3 +77,22 @@ select a.*, b.*
  from inserted_row a
  join inserted_row_key b ON a.id = b.inserted_row
 "]))
+
+(defn save-row
+  "Save a :inserted_row record. If ID is present and not zero, then
+  this is an update operation, otherwise it's an insert."
+  [db data]
+  (let [id (:inserted_row/id data)]
+    (if (and id (not (zero? id)))
+      ;; update
+      (sql/update! (db) :inserted_row
+                   (dissoc data :inserted_row/id)
+                   {:id id})
+      ;; insert
+      (sql/insert! (db) :inserted_row
+                   (dissoc data :inserted_row/id)))))
+
+(defn delete-by-id
+  "Given a :inserted_row ID, delete that user."
+  [db id]
+  (sql/delete! (db) :inserted_row {:id id}))
