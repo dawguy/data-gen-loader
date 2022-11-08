@@ -2,4 +2,7 @@
 .idea
 .nrepl-port
 .cpcache
+
+# SQLite db files
 tracking_db
+cass_db
