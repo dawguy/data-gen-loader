@@ -32,7 +32,7 @@ select st.*
 "]))
 
 (defn save-data [db data]
-  (prn (str data))
+  ;(prn (str data))
   (let [id (:id data)]
   (if (and id (not (zero? id)))
    (sql/update! (db) :sample_table
@@ -43,7 +43,7 @@ select st.*
                 ))))
 
 (defn save-pk-table-data [db data]
-  (prn (str data))
+  ;(prn (str data))
   (sql/insert! (db) :sample_table_inserted_reference data))
 
 (defn delete-data [db id]

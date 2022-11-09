@@ -3,8 +3,9 @@
             [com.stuartsierra.component :as component]
             [data-gen-loader.main-model :as main-model]
             [data-gen-loader.tracking-model :as tracking-model]
-            [data-gen-loader.gen :as gen])
-)
+            [data-gen-loader.gen :as gen]
+            [com.climate.claypoole :as cp])
+  (:import (org.sqlite SQLiteException)))
 
 (defrecord Application [config   ; configuration (unused)
                         database ; dependency
@@ -35,22 +36,31 @@
   (main-model/populate (:database system) (:dbtype "sqlite"))
   ,)
 
+(defn generate-sample-table-data-future [gen-definition system]
+  (try
+    (let [data (gen/eval-gens gen-definition)
+          gen-id (second (first (data-gen-loader.domain.sample-table/save-data (:database system) (apply dissoc data [:id :primary-key]))))]
+      (data-gen-loader.domain.sample-table/save-pk-table-data (:database-key-lookup system)
+                                                              (assoc (select-keys data [:town]) :id gen-id)))
+    (catch SQLiteException e
+      (println "Exception: " (ex-message e)))))
+
 
 (defn generate-sample-table-data [qty system]
-  (let [overrides {:name (gen/val-gen-string)
+  (let [pool (cp/threadpool 50)
+        overrides {:name (gen/val-gen-string)
                    :town (gen/val-gen-rand-from-list ["Earth", "Moon", "Antarctica"])}
         gen-definition (gen/create data-gen-loader.domain.sample-table/definition overrides)
         ]
-    ; TODO: Goal is to do this next part in parallel. No idea how to do that right now though, so will be doing it in sequence.
-    ; https://www.youtube.com/watch?v=BzKjIk0vgzE -- claypoole talk
-    ; Alternative strategy will be to use core.aysnc channels. Maybe do both to learn more?
-    (doseq [i (range qty)]
-      (let [data (gen/eval-gens gen-definition)
-            gen-id (second (first (data-gen-loader.domain.sample-table/save-data (:database system) (dissoc (dissoc data :id) :primary-key))))]
-          (data-gen-loader.domain.sample-table/save-pk-table-data (:database-key-lookup system)
-            (assoc (select-keys data [:town]) :id gen-id)))
-          )))
+    (doall (cp/pmap pool #(% gen-definition system) (take qty (repeat generate-sample-table-data-future))))
+    (cp/shutdown pool)
+    nil
+    ))
 
 (comment ""
-         (generate-sample-table-data 10 system)
+         (time (generate-sample-table-data 10 system))
+         (time (generate-sample-table-data 1000 system))
+         (time (generate-sample-table-data 5000 system))
+         (time (generate-sample-table-data 10000 system))
+         (time (generate-sample-table-data 50000 system))
          ,)
