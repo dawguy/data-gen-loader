@@ -1,0 +1,32 @@
+version: '3'
+
+services:
+  my-cassandra:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: my-cassandra
+    ports:
+      - "9042:9042"
+    restart: always
+    environment:
+      - "MAX_HEAP_SIZE=256M"
+      - "HEAP_NEWSIZE=128M"
+      - CASSANDRA_PASSWORD=cassandra
+    volumes:
+      - /Cass/data:/var/lib/cassandra
+    healthcheck:
+      test: [ "CMD", "cqlsh", "-u cassandra", "-p cassandra" ,"-e \"describe keyspaces\"" ]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+
+  cassandra-load-keyspace:
+    container_name: cassandra-load-keyspace
+    image: cassandra:3.11.2
+    depends_on:
+      - my-cassandra
+
+volumes:
+  cassandra_data:
+    driver: local
