@@ -23,7 +23,9 @@ services:
 
   cassandra-load-keyspace:
     container_name: cassandra-load-keyspace
-    image: cassandra:3.11.2
+    build:
+      context: .
+      dockerfile: Dockerfile
     depends_on:
       - my-cassandra
 
