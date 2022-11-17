@@ -6,6 +6,7 @@
         com.stuartsierra/component {:mvn/version "1.0.0"}
         org.xerial/sqlite-jdbc {:mvn/version "3.34.0"}
         com.climate/claypoole {:mvn/version "1.1.4"}
+        cc.qbits/alia-all {:mvn/version "5.0.0-alpha7"}
        }
  :aliases
  {

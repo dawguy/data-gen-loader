@@ -1,41 +1,27 @@
 (ns data-gen-loader.main-model
   (:require [com.stuartsierra.component :as component]
-            [next.jdbc :as jdbc]
+            [qbits.alia :as alia]
             [data-gen-loader.domain.sample-table])
   )
 
 ;; Database component
-(def ^:private pretend-cass-database-spec
-  {:dbtype "sqlite" :dbname "cass_db"})
-
-(defn- populate
-  "Called at application startup. Attempts to create the
-  database table and populate it. Takes no action if the
-  database table already exists."
-  [db db-type]
-  (let [auto-key (if (= "sqlite" db-type)
-                   "primary key autoincrement"
-                   (str "generated always as identity"
-                        " (start with 1 increment by 1)"
-                        " primary key"))]
-    (try
-      (jdbc/execute-one! (db)
-                         [(data-gen-loader.domain.sample-table/create-table-schema auto-key)])
-      (println "Created main database and tables!")
-      (catch Exception e
-        (println "Exception: " (ex-message e))
-        (println "Looks like main database was already setup")))))
+(def ^:private cass-database-spec
+  {:session-keyspace "sample_keyspace"
+   :contact-points ["172.22.0.2:9042"]
+   :load-balancing-local-datacenter "datacenter1"
+   :auth-provider-user-name "cassandra"             ; Okay with hard-coding as this is a hobby project. Ideally we'd use environment variables for this or CLI arguments when booting the REPL.
+   :auth-provider-password "cassandra"
+   :auth-provider-class "PlainTextAuthProvider"})           ; Okay with hard-coding as this is a hobby project. Ideally we'd use environment variables for this or CLI arguments when booting the REPL.
 
 (defrecord Database [db-spec     ; configuration
                      datasource] ; state
 
   component/Lifecycle
   (start [this]
+    (prn (str "Start" this db-spec datasource))
     (if datasource
       this ; already initialized
-      (let [database (assoc this :datasource (jdbc/get-datasource db-spec))]
-        ;; set up database if necessary
-        (populate database (:dbtype db-spec))
+      (let [database (assoc this :datasource (alia/session cass-database-spec))]
         database)))
   (stop [this]
     (assoc this :datasource nil))
@@ -43,6 +29,11 @@
   ;; allow the Database component to be "called" with no arguments
   ;; to produce the underlying datasource object
   clojure.lang.IFn
-  (invoke [_] datasource))
+  (invoke [_] (do (prn datasource) datasource)))
 
-(defn setup-database [] (map->Database {:db-spec pretend-cass-database-spec}))
+(defn setup-database [] (map->Database cass-database-spec))
+
+(defn get-inserted-data
+  ([session] (data-gen-loader.domain.sample-table/get-data session))
+  ([session id] (data-gen-loader.domain.sample-table/get-data session id))
+  )

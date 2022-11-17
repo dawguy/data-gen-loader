@@ -1,5 +1,6 @@
 (ns data-gen-loader.domain.sample-table
- (:require [next.jdbc.sql :as sql]))
+  (:require [next.jdbc.sql :as sql]
+            [qbits.alia :as alia]))
 
 (def definition {
  :primary-key [:id :town]
@@ -24,30 +25,32 @@ create table sample_table_inserted_reference(
   town                               varchar(255)
 )"))
 
-(defn get-data [db]
- (sql/query (db)
-            ["
-select st.*
-  from sample_table st
-"]))
+(defn get-data
+  ([session] (alia/execute (session) "select * from sample_table"))
+  ([session id] (alia/execute (session)
+                              (alia/prepare (session) "select * from sample_table where id = :id;")
+                              {:values {:id (int id)}}))
+  )
 
-(defn save-data [db data]
-  ;(prn (str data))
-  (let [id (:id data)]
-  (if (and id (not (zero? id)))
-   (sql/update! (db) :sample_table
-                (dissoc data :id)
-                {:id id} {:return-keys [:id :town]})
-   (sql/insert! (db) :sample_table
-                (dissoc data :id) {:return-keys [:id :town]} ; Note: SQLite does not support return-keys
-                ))))
+(defn save-data [session data]
+  (prn (str "SESSION: " session))
+  (prn (str "DATA: " data (select-keys data [:id :name :town])))
+  (let [prepared-insert (alia/prepare (session) "insert into sample_table (id, name, town) values (:id, :name, :town)")]
+    (alia/execute (session) prepared-insert {:values {:id (int (:id data))
+                                                      :name (:name data)
+                                                      :town (:town data)}})
+))
 
 (defn save-pk-table-data [db data]
-  ;(prn (str data))
   (sql/insert! (db) :sample_table_inserted_reference data))
 
-(defn delete-data [db id]
- (sql/delete! (db) :sample_table {:id id}))
+(defn delete-data [session id-data]
+  (prn (str id-data))
+  (let [prepared-delete (alia/prepare (session) "delete from sample_table where id = :id")]
+    (alia/execute (session) prepared-delete {:values {:id (int (:id id-data))}})))
+
+(defn delete-pk-table-data [db id-data]
+  (sql/delete! (db) :sample_table_inserted_reference {:id id-data}))
 
 (comment
  (def data {:primary-key ["id"], :id 966, :name "97c3ca35-757c-4fcf-92d3-13f4219e06d3", :town "Earth"})

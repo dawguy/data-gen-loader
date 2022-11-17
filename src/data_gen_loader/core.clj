@@ -30,16 +30,23 @@
 
 (comment
   (def system (new-system 8888))
+  (:database system)
+  (get-in system [:database :datasource])
   (alter-var-root #'system component/start)
   (alter-var-root #'system component/stop)
   (main-model/get-inserted-data (:database system))
+  (main-model/get-inserted-data (:database system) 2)
   (main-model/populate (:database system) (:dbtype "sqlite"))
+  (data-gen-loader.domain.sample-table/delete-data (:database system) {:id 6065})
   ,)
 
 (defn generate-sample-table-data-future [gen-definition system]
   (try
     (let [data (gen/eval-gens gen-definition)
-          gen-id (second (first (data-gen-loader.domain.sample-table/save-data (:database system) (apply dissoc data [:id :primary-key]))))]
+          aaa (prn (str "data: " data))
+          gen-id (data-gen-loader.domain.sample-table/save-data (:database system) (apply dissoc data [:primary-key]))]
+      (prn data)
+      (prn gen-id)
       (data-gen-loader.domain.sample-table/save-pk-table-data (:database-key-lookup system)
                                                               (assoc (select-keys data [:town]) :id gen-id)))
     (catch SQLiteException e
@@ -48,16 +55,18 @@
 
 (defn generate-sample-table-data [qty system]
   (let [pool (cp/threadpool 50)
-        overrides {:name (gen/val-gen-string)
+        overrides {:id   (gen/val-gen-num 0 10000)
+                   :name (gen/val-gen-string)
                    :town (gen/val-gen-rand-from-list ["Earth", "Moon", "Antarctica"])}
         gen-definition (gen/create data-gen-loader.domain.sample-table/definition overrides)
         ]
+    (prn gen-definition)
     (doall (cp/pmap pool #(% gen-definition system) (take qty (repeat generate-sample-table-data-future))))
     (cp/shutdown pool)
-    nil
-    ))
+    nil))
 
 (comment ""
+         (time (generate-sample-table-data 1 system))
          (time (generate-sample-table-data 10 system))
          (time (generate-sample-table-data 1000 system))
          (time (generate-sample-table-data 5000 system))
