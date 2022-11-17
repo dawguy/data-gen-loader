@@ -33,8 +33,6 @@ create table sample_table_inserted_reference(
   )
 
 (defn save-data [session data]
-  (prn (str "SESSION: " session))
-  (prn (str "DATA: " data (select-keys data [:id :name :town])))
   (let [prepared-insert (alia/prepare (session) "insert into sample_table (id, name, town) values (:id, :name, :town)")]
     (alia/execute (session) prepared-insert {:values {:id (int (:id data))
                                                       :name (:name data)
@@ -45,7 +43,6 @@ create table sample_table_inserted_reference(
   (sql/insert! (db) :sample_table_inserted_reference data))
 
 (defn delete-data [session id-data]
-  (prn (str id-data))
   (let [prepared-delete (alia/prepare (session) "delete from sample_table where id = :id")]
     (alia/execute (session) prepared-delete {:values {:id (int (:id id-data))}})))
 

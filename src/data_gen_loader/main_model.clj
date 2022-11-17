@@ -29,7 +29,7 @@
   ;; allow the Database component to be "called" with no arguments
   ;; to produce the underlying datasource object
   clojure.lang.IFn
-  (invoke [_] (do (prn datasource) datasource)))
+  (invoke [_] datasource))
 
 (defn setup-database [] (map->Database cass-database-spec))
 
