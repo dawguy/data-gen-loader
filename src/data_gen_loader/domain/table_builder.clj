@@ -117,14 +117,60 @@
                                        (vals (:foreign-keys deduped-strs))))))
          ");")))
 
+(defn sqlite-select-table-fn [table-def]
+  (let [table-name (:table-name (meta table-def))
+        select-table-strs (:keys (:select (assoc-data-sqlite table-def)))]
+    (fn
+      ([] (str "select * from " table-name ";"))
+      ([data]
+       (let [selected-table-keys (select-keys select-table-strs (keys data))]
+         (str "select * from " table-name
+              " where " (clojure.string/join ", " (map (fn [[k v]] (str v " = " (get data k))) selected-table-keys))
+              ";")))
+    )))
+
+(defn sqlite-insert-into-table-fn [table-def]
+  (let [table-name (:table-name (meta table-def))
+        select-table-strs (get-in (assoc-data-sqlite table-def) [:select :keys])]
+    (fn [data]
+      (let [selected-table-keys (select-keys select-table-strs (keys data))]
+        (str "insert into " table-name
+             " (" (clojure.string/join ", " (vals selected-table-keys))
+             ") values (" (clojure.string/join ", " (map #(get data %) (keys selected-table-keys)))
+             ");")))))
+
+(defn sqlite-update-into-table-fn [table-def]
+  (let [table-name (:table-name (meta table-def))
+        select-table-strs (get-in (assoc-data-sqlite table-def) [:select])]
+    (fn [data]
+      (let [selected-table-keys (select-keys (get select-table-strs :keys) (keys data))]
+        (str "update " table-name
+             " set " (clojure.string/join ", " (map (fn [[k v]] (str v " = " (get data k))) selected-table-keys))
+             " where " (clojure.string/join ", " (map (fn [[k v]] (str v " = " (get data k))) (:primary-keys select-table-strs)))
+             ";")))))
+
+(defn sqlite-delete-table-fn [table-def]
+  (let [table-name (:table-name (meta table-def))
+        select-table-strs (get-in (assoc-data-sqlite table-def) [:select])]
+    (fn
+      ;([] (str "delete from " table-name ";")) ; Optional. Uncomment to allow delete with no where
+      ([data]
+         (str "delete from " table-name
+              " where " (clojure.string/join ", " (map (fn [[k v]] (str v " = " (get data k))) (:primary-keys select-table-strs)))
+              ";"))
+      )))
+
 (comment ""
          (def table-def table-def-person)
          (def table-def table-def-child)
          (def data {:id 12345 :name "Hello world" :town "Earth"})
+         (def data {:id 12345 :name "Hello world" :town "Earth" :first_name "Ozzie" :last_name "Albies"})
          (def db nil)
          (def field-name :id)
          (def auto-increment :auto-increment)
+         (def table-name (:table-name (meta table-def)))
          (def foreign-keys (:foreign-keys (meta table-def)))
+         (def selected-table-keys (select-keys (:keys select-table-strs) (keys data)))
          ((:table-name (meta (deref (second (first foreign-keys))))))
          (sqlite-create-table-fn table-def)
          ((sqlite-create-table-fn table-def) data db)
@@ -134,6 +180,19 @@
                                (foreign-keyify table-def)
                                )))
          (def deduped-strs (reduce dissoc-in strs (map (fn [pk] [:keys pk]) (keys (:primary-keys (meta table-def))))))
+         (def select-table-strs (:keys (:select (assoc-data-sqlite table-def))))
+         (def select-table-strs (get-in (assoc-data-sqlite table-def) [:select]))
+         (select-keys select-table-strs (keys data))
+         (def select-statement (sqlite-select-table-fn table-def))
+         (select-statement data)
+         (select-statement)
+         (def insert-statement (sqlite-insert-into-table-fn table-def))
+         (insert-statement data)
+         (def update-statement (sqlite-update-into-table-fn table-def))
+         (update-statement data)
+         (def delete-statement (sqlite-delete-table-fn table-def))
+         (delete-statement data)
+         (delete-statement)
          ,)
 
 (defn sqlite-save-fn [table-def]
