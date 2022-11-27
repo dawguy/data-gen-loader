@@ -8,7 +8,7 @@
                                  }
                                 {
                                  :table-name  "tb_place"
-                                 :primary-key {
+                                 :primary-keys {
                                                :id   :auto-increment
                                                :town :primary-key
                                                }
@@ -22,7 +22,7 @@
               }
              {
               :table-name  "tb_person"
-              :primary-key {
+              :primary-keys {
                             :id :auto-increment
                             }
               }))
@@ -32,7 +32,7 @@
               :parent "integer"
               :child  "integer"}
              {:table-name  "tb_person_person"
-              :primary-key {
+              :primary-keys {
                             :id :auto-increment
                             :parent :primary-key
                             }
@@ -47,7 +47,7 @@
             {:field-name "exact wording of field type"
              :other-field-name "integer"}
             {:table-name "name of table"
-             :primary-key {
+             :primary-keys {
                            :id :auto-increment
                            :second-pk-if-necessary :primary-key
                            }
@@ -62,35 +62,60 @@
          (def data {})
          ,)
 
-(defn str-auto-key [db-type]
-    (if (= "sqlite" db-type)
-      "primary key autoincrement"
-      (str "generated always as identity"
-           " (start with 1 increment by 1)"
-           " primary key")))
+(defn primary-keyify "Translates primary key definitions into strings" [table-def m]
+  (reduce (fn [acc [f primary-type]]
+            (-> acc
+                (assoc-in [:create-table :primary-keys f] (if (= primary-type :auto-increment)
+                                                              (str (symbol f) " " (get table-def f) " primary key autoincrement")
+                                                              (str (symbol f) " " (get table-def f) " primary key")))
+                (assoc-in [:select :primary-keys f] (symbol f))
+                (assoc-in [:value :primary-keys f] (get table-def f))
+                ))
+          m (:primary-keys (meta table-def))))
+
+(defn regular-keyify "Translates regular table definitions into strings" [table-def m]
+  (reduce (fn [acc [f v]]
+            (-> acc
+                (assoc-in [:create-table :keys f] (str (symbol f) " " v))
+                (assoc-in [:select :keys f] (symbol f))
+                (assoc-in [:value :keys f] (get table-def f))
+                ))
+          m table-def))
+
+(defn foreign-keyify "Translates foreign keys into the create table string version" [table-def m]
+  (reduce (fn [acc [f foreign-table-def]]
+            (-> acc
+                (assoc-in [:create-table :foreign-keys f] (str "FOREIGN KEY(" (symbol f) ") REFERENCES "
+                                                               (:table-name (meta (deref foreign-table-def)))
+                                                               "(" (symbol f) ")"))
+                (assoc-in [:select :foreign-keys f] (symbol f))
+                (assoc-in [:value :foreign-keys f] (get table-def f))
+                ))
+          m (:foreign-keys (meta table-def))))
+
+(comment "Helpers for keyify functions"
+         (foreign-keyify table-def {})
+         (primary-keyify table-def {})
+         (regular-keyify table-def {})
+         ,)
+
+(declare dissoc-in)
+
+(defn assoc-data-sqlite [table-def] (->> table-def
+                                  (primary-keyify table-def)
+                                  (regular-keyify table-def)
+                                  (foreign-keyify table-def)))
 
 (defn sqlite-create-table-fn [table-def] "Generates a function which takes in a (db) and when executed will create the table defined by the table-def"
   (let [table-name (:table-name (meta table-def))
-        primary-keys (apply str (map (fn [[field-name auto-increment]]
-                                        (if (= auto-increment :auto-increment)
-                                          (str (symbol field-name) " " (get table-def field-name) " " (str-auto-key "sqlite") ", ")
-                                          (str (symbol field-name) " " (get table-def field-name) " primary key, "))) (:primary-key (meta table-def))))
-        non-primary-data (apply dissoc table-def (keys (:primary-key (meta table-def))))
-        drop-comma-fn (fn [s following-data] (if (or (< 0 (count following-data)) (empty? s))
-                                               s
-                                               (.substring s 0 (- (count s) 2))
-                                ))
-        foreign-keys (:foreign-keys (meta table-def))]
-    (fn [data db]
-    (apply str "create table " table-name "("
-                   primary-keys " "
-                   (drop-comma-fn (string/join (apply str (map #(str (symbol (first %)) " " (second %) ", ") non-primary-data)))
-                                  (:foreign-keys (meta table-def))) " "
-         (drop-comma-fn (apply str (map #(str "FOREIGN KEY(" (symbol (first %)) ") REFERENCES " (:table-name (meta (deref (second %)))) "(" (symbol (first %)) "), ") foreign-keys))
-                        [])
-         ");")
-      ))
-  )
+        create-table-strs (:create-table (assoc-data-sqlite table-def))
+        deduped-strs (reduce dissoc-in create-table-strs (map (fn [pk] [:keys pk]) (keys (:primary-keys (meta table-def)))))]
+    (str "create table " table-name "("
+         (clojure.string/join ", " (flatten (filter identity (conj [] ; Filters out nils
+                                       (vals (:primary-keys deduped-strs))
+                                       (vals (:keys deduped-strs))
+                                       (vals (:foreign-keys deduped-strs))))))
+         ");")))
 
 (comment ""
          (def table-def table-def-person)
@@ -101,7 +126,14 @@
          (def auto-increment :auto-increment)
          (def foreign-keys (:foreign-keys (meta table-def)))
          ((:table-name (meta (deref (second (first foreign-keys))))))
+         (sqlite-create-table-fn table-def)
          ((sqlite-create-table-fn table-def) data db)
+         (def strs (:strs (->> table-def
+                               (primary-keyify table-def)
+                               (regular-keyify table-def)
+                               (foreign-keyify table-def)
+                               )))
+         (def deduped-strs (reduce dissoc-in strs (map (fn [pk] [:keys pk]) (keys (:primary-keys (meta table-def))))))
          ,)
 
 (defn sqlite-save-fn [table-def]
@@ -120,3 +152,17 @@
 
 )
 
+; https://stackoverflow.com/questions/14488150/how-to-write-a-dissoc-in-command-for-clojure
+(defn dissoc-in
+  "Dissociates an entry from a nested associative structure returning a new
+  nested structure. keys is a sequence of keys. Any empty maps that result
+  will not be present in the new structure."
+  [m [k & ks :as keys]]
+  (if ks
+    (if-let [nextmap (get m k)]
+      (let [newmap (dissoc-in nextmap ks)]
+        (if (seq newmap)
+          (assoc m k newmap)
+          (dissoc m k)))
+      m)
+    (dissoc m k)))
